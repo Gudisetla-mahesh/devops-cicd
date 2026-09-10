@@ -1,6 +1,11 @@
 pipeline {
     agent any
 
+    environment {
+        IMAGE_NAME = "devops-cicd-app"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+    }
+
     stages {
 
         stage('Checkout') {
@@ -12,14 +17,33 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t devops-cicd-app:${BUILD_NUMBER} ./app'
+                sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ./app'
             }
         }
 
-        stage('Test Docker Image') {
+        stage('Deploy to Kubernetes') {
             steps {
-                sh 'docker images devops-cicd-app'
+                sh 'minikube image load ${IMAGE_NAME}:${IMAGE_TAG}'
+                sh 'sed "s|image: devops-cicd-app:v1|image: devops-cicd-app:${IMAGE_TAG}|" k8s/deployment.yml > /tmp/deployment-${BUILD_NUMBER}.yml'
+                sh 'kubectl apply -f /tmp/deployment-${BUILD_NUMBER}.yml'
+                sh 'kubectl rollout status deployment/devops-cicd-app --timeout=120s'
             }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                sh 'kubectl get pods'
+                sh 'kubectl get svc devops-cicd-service'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'CI/CD pipeline completed successfully!'
+        }
+        failure {
+            echo 'CI/CD pipeline failed.'
         }
     }
 }
